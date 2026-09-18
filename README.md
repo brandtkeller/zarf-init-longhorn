@@ -1,60 +1,46 @@
 # Zarf Init Package for Longhorn
 
-> :warning: EXPERIMENTAL!  This package is currently in an experimental state.
+This custom Zarf init package bootstraps the Zarf registry and deploys Longhorn
+as the cluster's storage provider. It stages Longhorn's images in the seed
+registry, deploys the Longhorn Helm chart, waits for Longhorn's per-node engine
+images and instance managers, then copies the images into the permanent Zarf
+registry.
 
-Zarf eliminates the [complexity of air gap software delivery](https://www.itopstimes.com/contain/air-gap-kubernetes-considerations-for-running-cloud-native-applications-without-the-cloud/) for Kubernetes clusters and cloud-native workloads using a declarative packaging strategy to support DevSecOps in offline and semi-connected environments.
+## Prerequisites
 
-## 👀 Looking for Zarf?
+- Nodes that meet the [Longhorn installation requirements](https://longhorn.io/docs/latest/deploy/install/#installation-requirements),
+  including `open-iscsi`.
 
-- [Zarf Website](https://zarf.dev)
-- [Zarf Overview](https://docs.zarf.dev/docs/zarf-overview)
-- [Zarf Repo](https://github.com/defenseunicorns/Zarf)
-
-## Zarf Init Package for Longhorn
-
-This repository contains the Zarf init package for Longhorn that creates a longhorn storage class on the cluster.
-
-## Usage
-
-### Prerequisites
-
-- Zarf CLI (version >= `v0.62.0`)
-    - <https://docs.zarf.dev/docs/getting-started>
-
-- Connection to a host (or cluster) configured to run longhorn
-    - <https://longhorn.io/docs/1.5.1/deploy/install/#installation-requirements>
-
-## Quick Start
+Run Longhorn's preflight checker against the target cluster before deployment:
 
 ```bash
-zarf package pull oci://ghcr.io/brandtkeller/zarf/zarf-init-longhorn/init:v0.62.0
+longhornctl check preflight --kubeconfig=<path-to-your-kubeconfig>
 ```
+
+The checker requires a real kubeconfig because it creates a temporary DaemonSet,
+so it runs from the workstation rather than as a package component. K3s nodes
+require the additional configuration described in [Longhorn CSI on
+K3s](https://longhorn.io/docs/latest/advanced-resources/os-distro-specific/csi-on-k3s/).
+
+## Create and initialize
 
 ```bash
-zarf init --confirm
+zarf package create . --confirm
+zarf init ./zarf-init-<architecture>-<version>.tar.zst --confirm
 ```
 
-Once the init package is deployed, the Longhorn storage class will be created. The dashboard can be accessed via:
+After initialization, Longhorn's default storage class is available. Open its
+dashboard with:
 
 ```bash
 zarf connect longhorn-ui
 ```
 
-### Create the Zarf init package
+## Registry configuration
 
-```bash
-zarf package create . --set AGENT_IMAGE_TAG=$(zarf version)
-```
-
-### Initialize the Zarf init package
-
-```bash
-zarf init --confirm
-```
-> :warning: Different configuration options may be required depending on your environment
-
-### Connecting an NFS backupstore
-```yaml
-defaultSettings:
-  backupTarget: "nfs://192.168.0.10:/"
-```
+`longhorn/values.yaml` sets `global.imageRegistry` to Zarf's
+`###ZARF_REGISTRY###` template variable. Zarf's agent redirects image pulls,
+but Longhorn also passes the manager image to `longhorn-manager` as a command
+line argument. Setting this value makes that expected image match the
+agent-rewritten pod image; removing it causes the manager to consider its new
+pod stale during upgrades.
