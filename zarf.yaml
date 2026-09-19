@@ -6,7 +6,69 @@ metadata:
 documentation:
   readme: README.md
 
+variables:
+  - name: K3S_ARGS
+    description: Arguments to pass to K3s.
+    default: --disable traefik
+
 components:
+  # Optional host-level K3s bootstrap. Select with `--components k3s` when
+  # initializing a new Linux host; omit it when targeting an existing cluster.
+  - name: k3s
+    only:
+      localOS: linux
+      cluster:
+        architecture: amd64
+    description: >
+      *** REQUIRES ROOT (not sudo) ***
+      Install K3s to host Zarf and Longhorn on a new Linux machine.
+    files:
+      - source: k3s/zarf-clean-k3s.sh
+        target: /opt/zarf/zarf-clean-k3s.sh
+        executable: true
+      - source: k3s/k3s.service
+        target: /etc/systemd/system/k3s.service
+        symlinks:
+          - /etc/systemd/system/multi-user.target.wants/k3s.service
+      # renovate: datasource=github-releases depName=k3s-io/k3s
+      - source: https://github.com/k3s-io/k3s/releases/download/v1.35.8+k3s1/k3s
+        shasum: 12f81c9bb5b71e098a4f7a2d187e350902a9339a6c3d5e56c20a03f7a417e07f
+        target: /usr/sbin/k3s
+        executable: true
+        symlinks:
+          - /usr/sbin/kubectl
+          - /usr/sbin/ctr
+          - /usr/sbin/crictl
+      - source: https://github.com/k3s-io/k3s/releases/download/v1.35.8+k3s1/k3s-airgap-images-amd64.tar.zst
+        shasum: 807160da9a1b3ec86183a777241a6fe948d27fd6fdf3b88d0da39fa3b1ceeddc
+        target: /var/lib/rancher/k3s/agent/images/k3s.tar.zst
+    actions:
+      onDeploy:
+        defaults:
+          maxRetries: 5
+        before:
+          - cmd: if [ "$(uname -m)" != "x86_64" ]; then echo "this package architecture is amd64, but the target system has a different architecture. These architectures must be the same" && exit 1; fi
+            description: Check that the host architecture matches the package architecture
+            maxRetries: 0
+          - cmd: ./zarf internal is-valid-hostname
+            description: Check that the hostname is RFC 1123-compliant
+            maxRetries: 0
+          - cmd: "[ -e /etc/redhat-release ] && systemctl disable firewalld --now || echo ''"
+            description: Disable firewalld on RHEL variants per K3s requirements
+        after:
+          - cmd: systemctl daemon-reload
+            description: Reload system services
+          - cmd: systemctl enable k3s
+            description: Enable K3s at system boot
+          - cmd: systemctl restart k3s
+            description: Start K3s
+      onRemove:
+        before:
+          - cmd: /opt/zarf/zarf-clean-k3s.sh
+            description: Remove K3s
+          - cmd: rm /opt/zarf/zarf-clean-k3s.sh
+            description: Remove the K3s cleanup script
+
   # This package moves the injector & registries binaries
   - name: zarf-injector
     required: true

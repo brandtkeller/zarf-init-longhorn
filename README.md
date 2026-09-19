@@ -22,6 +22,33 @@ so it runs from the workstation rather than as a package component. K3s nodes
 require the additional configuration described in [Longhorn CSI on
 K3s](https://longhorn.io/docs/latest/advanced-resources/os-distro-specific/csi-on-k3s/).
 
+### Bootstrap a new K3s host
+
+The optional `k3s` component installs K3s v1.35.8+k3s1 on a new Linux AMD64
+host. It must run as `root` and must be selected explicitly. Install Longhorn's
+node prerequisites before initialization:
+
+```bash
+apt-get update
+apt-get install -y open-iscsi
+modprobe iscsi_tcp
+systemctl enable --now iscsid
+```
+
+For a new host, build the package, switch to a root shell, and select the K3s
+component:
+
+```bash
+zarf package create . --confirm
+sudo -i
+zarf init /path/to/zarf-init-amd64-v0.86.0.tar.zst --components k3s --confirm
+```
+
+The package's default Longhorn StorageClass uses three replicas. For a
+single-node demo, set `persistence.defaultClassReplicaCount: 1` in
+`longhorn/values.yaml` before building. Do not select `k3s` when initializing
+an existing cluster.
+
 ## Create and initialize
 
 ```bash
